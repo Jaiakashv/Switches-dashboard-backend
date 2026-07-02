@@ -1,0 +1,20 @@
+name: Keep Render Backend Alive
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping Switches Dashboard Backend
+        run: |
+          for i in 1 2 3
+          do
+            curl -fsS https://switches-dashboard-backend.onrender.com/api/switches && break
+            echo "Retry $i..."
+            sleep 10
+          done
