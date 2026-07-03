@@ -7,6 +7,11 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER || 'test@gmail.com',
     pass: process.env.EMAIL_PASS || 'password',
   },
+  connectionTimeout: 10000,
+  // Force IPv4 to prevent ENETUNREACH on systems without IPv6
+  tls: {
+    rejectUnauthorized: false,
+  },
 })
 
 const sendEmail = async ({ to, subject, html }) => {
