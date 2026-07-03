@@ -1,33 +1,28 @@
 const nodemailer = require('nodemailer')
 
-// Brevo SMTP configuration - optimized for cloud platforms
+// Standard SMTP configuration - optimized for cloud platforms
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_PORT),
-  secure: false,
-  requireTLS: true,
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: process.env.EMAIL_PORT || 465, // Use 465 (SSL) instead of 587 (TLS) for better cloud compatibility
+  secure: true, // true for 465, false for 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  connectionTimeout: 30000,
-  greetingTimeout: 30000,
-  socketTimeout: 30000,
+  connectionTimeout: 30000, // Increased from 10s to 30s for cloud environments
+  greetingTimeout: 15000,
+  socketTimeout: 15000,
+  tls: {
+    rejectUnauthorized: false,
+  },
 })
 
 // Verify transporter configuration on startup
 transporter.verify((error, success) => {
   if (error) {
-    console.error('❌ Email transporter configuration error')
-    console.error('SMTP Host:', process.env.EMAIL_HOST)
-    console.error('SMTP Port:', process.env.EMAIL_PORT)
-    console.error('Email User:', process.env.EMAIL_USER)
-    console.error('Complete verify error:', error)
+    console.error('❌ Email transporter configuration error:', error)
   } else {
     console.log('✅ Email transporter is ready to send emails')
-    console.log('SMTP Host:', process.env.EMAIL_HOST)
-    console.log('SMTP Port:', process.env.EMAIL_PORT)
-    console.log('Email User:', process.env.EMAIL_USER)
   }
 })
 
@@ -42,7 +37,7 @@ const sendEmail = async ({ to, subject, html }) => {
     })
     
     const info = await transporter.sendMail({
-      from: `"NMS Alerts" <${process.env.EMAIL_USER}>`,
+      from: `"NMS Alerts" <${process.env.EMAIL_USER || 'test@gmail.com'}>`,
       to,
       subject,
       html,
@@ -50,11 +45,8 @@ const sendEmail = async ({ to, subject, html }) => {
     console.log('✅ Email sent successfully:', info.messageId)
     return info
   } catch (error) {
-    console.error('❌ Error sending email')
-    console.error('Error message:', error.message)
-    console.error('Error code:', error.code)
-    console.error('Error command:', error.command)
-    console.error('Complete error object:', error)
+    console.error('❌ Error sending email:', error.message)
+    console.error('Full error:', error)
     throw error // Re-throw to allow caller to handle the error
   }
 }

@@ -4,8 +4,28 @@ const { createAuditLog } = require('./auditLogController')
 
 const getSwitches = async (req, res, next) => {
   try {
-    const switches = await getArrayFromRedis(REDIS_KEYS.SWITCHES)
-    res.json(switches)
+    const limit = parseInt(req.query.limit) || 10
+    const offset = parseInt(req.query.offset) || 0
+    const search = req.query.search?.trim().toLowerCase() || ''
+
+    let switches = await getArrayFromRedis(REDIS_KEYS.SWITCHES)
+
+    if (search) {
+      switches = switches.filter((device) =>
+        device.model.toLowerCase().includes(search) ||
+        device.id.toLowerCase().includes(search)
+      )
+    }
+
+    const total = switches.length
+    const paginatedSwitches = switches.slice(offset, offset + limit)
+
+    res.json({
+      data: paginatedSwitches,
+      total,
+      limit,
+      offset
+    })
   } catch (error) {
     next(error)
   }
