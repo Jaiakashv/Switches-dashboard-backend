@@ -1,14 +1,14 @@
 const nodemailer = require('nodemailer')
 
-// Assuming Gmail SMTP during development
+// Using Mailtrap for email testing
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: process.env.EMAIL_HOST || 'sandbox.smtp.mailtrap.io',
+  port: process.env.EMAIL_PORT || 2525,
   auth: {
-    user: process.env.EMAIL_USER || 'test@gmail.com',
-    pass: process.env.EMAIL_PASS || 'password',
+    user: process.env.EMAIL_USER || process.env.MAILTRAP_TOKEN,
+    pass: process.env.EMAIL_PASS || process.env.MAILTRAP_TOKEN,
   },
   connectionTimeout: 10000,
-  // Force IPv4 to prevent ENETUNREACH on systems without IPv6
   tls: {
     rejectUnauthorized: false,
   },
