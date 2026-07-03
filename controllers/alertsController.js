@@ -39,6 +39,8 @@ const generateMockAlert = async (req, res, next) => {
       const admins = users.filter((u) => u.role === 'Admin')
       for (const admin of admins) {
         await sendClusterAlertEmail(admin.email, newAlert)
+          .then(() => console.log('✅ Alert email sent successfully to:', admin.email))
+          .catch((err) => console.error('❌ Alert email failed for', admin.email, ':', err.message))
       }
     }
 
