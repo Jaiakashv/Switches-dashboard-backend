@@ -2,6 +2,7 @@ const { getArrayFromRedis, saveArrayToRedis } = require('../utils/redisHelpers')
 const { REDIS_KEYS } = require('../utils/constants')
 const { generateToken, hashPassword, matchPassword } = require('../utils/auth')
 const crypto = require('crypto')
+const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emailService')
 
 const registerUser = async (req, res, next) => {
   try {
@@ -33,6 +34,9 @@ const registerUser = async (req, res, next) => {
 
     users.push(newUser)
     await saveArrayToRedis(REDIS_KEYS.USERS, users)
+
+    // Send Welcome Email
+    await sendWelcomeEmail(newUser.email, newUser.name)
 
     res.status(201).json({
       id: newUser.id,
@@ -78,8 +82,35 @@ const getMe = async (req, res, next) => {
   }
 }
 
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body
+    const users = await getArrayFromRedis(REDIS_KEYS.USERS)
+    const user = users.find((u) => u.email === email)
+
+    if (!user) {
+      // Return success anyway to prevent email enumeration
+      return res.status(200).json({ message: 'If an account exists, a reset link was sent.' })
+    }
+
+    const resetToken = crypto.randomUUID()
+    
+    // In a real app, save this token to Redis with an expiration time
+    const tokens = await getArrayFromRedis(REDIS_KEYS.RESET_TOKENS)
+    tokens.push({ email, token: resetToken, expiresAt: Date.now() + 3600000 }) // 1 hour
+    await saveArrayToRedis(REDIS_KEYS.RESET_TOKENS, tokens)
+
+    await sendPasswordResetEmail(user.email, resetToken)
+
+    res.status(200).json({ message: 'If an account exists, a reset link was sent.' })
+  } catch (error) {
+    next(error)
+  }
+}
+
 module.exports = {
   registerUser,
   loginUser,
   getMe,
+  forgotPassword
 }
