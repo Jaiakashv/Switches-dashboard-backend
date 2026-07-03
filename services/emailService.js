@@ -35,7 +35,7 @@ const sendWelcomeEmail = async (email, name) => {
 const sendPasswordResetEmail = async (email, resetToken) => {
   const subject = 'Password Reset Request'
   // Mock link for development
-  const resetLink = `http://localhost:5173/reset-password/${resetToken}`
+  const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`
   const html = `
     <h1>Password Reset</h1>
     <p>You requested a password reset. Click the link below to reset your password:</p>
