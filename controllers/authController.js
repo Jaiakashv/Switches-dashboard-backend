@@ -108,9 +108,43 @@ const forgotPassword = async (req, res, next) => {
   }
 }
 
+const changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body
+    
+    // User is extracted from the JWT token via the protect middleware
+    const users = await getArrayFromRedis(REDIS_KEYS.USERS)
+    const userIndex = users.findIndex((u) => u.id === req.user.id)
+    
+    if (userIndex === -1) {
+      res.status(404)
+      throw new Error('User not found')
+    }
+    
+    const user = users[userIndex]
+    
+    // Verify current password
+    if (!(await matchPassword(currentPassword, user.password))) {
+      res.status(401)
+      throw new Error('Incorrect current password')
+    }
+    
+    // Hash new password and save
+    const hashedNewPassword = await hashPassword(newPassword)
+    users[userIndex].password = hashedNewPassword
+    
+    await saveArrayToRedis(REDIS_KEYS.USERS, users)
+    
+    res.status(200).json({ message: 'Password updated successfully' })
+  } catch (error) {
+    next(error)
+  }
+}
+
 module.exports = {
   registerUser,
   loginUser,
   getMe,
-  forgotPassword
+  forgotPassword,
+  changePassword
 }
