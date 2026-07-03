@@ -15,6 +15,8 @@ const transporter = nodemailer.createTransport({
   tls: {
     rejectUnauthorized: false,
   },
+  // Force IPv4 to avoid IPv6 connectivity issues on Render
+  family: 4,
 })
 
 // Verify transporter configuration on startup
