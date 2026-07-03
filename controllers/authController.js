@@ -35,8 +35,10 @@ const registerUser = async (req, res, next) => {
     users.push(newUser)
     await saveArrayToRedis(REDIS_KEYS.USERS, users)
 
-    // Send Welcome Email
-    await sendWelcomeEmail(newUser.email, newUser.name)
+    // Send Welcome Email in background (non-blocking)
+    sendWelcomeEmail(newUser.email, newUser.name).catch((err) =>
+      console.error('Welcome email failed:', err)
+    )
 
     res.status(201).json({
       id: newUser.id,
