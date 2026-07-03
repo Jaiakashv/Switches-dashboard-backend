@@ -6,6 +6,7 @@ const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emailS
 
 const registerUser = async (req, res, next) => {
   try {
+    console.log('📝 Registration request received:', req.body.email)
     const { name, email, password } = req.body
 
     if (!name || !email || !password) {
@@ -34,12 +35,9 @@ const registerUser = async (req, res, next) => {
 
     users.push(newUser)
     await saveArrayToRedis(REDIS_KEYS.USERS, users)
+    console.log('✅ User saved to Redis:', newUser.email)
 
-    // Send Welcome Email in background (non-blocking)
-    sendWelcomeEmail(newUser.email, newUser.name)
-      .then(() => console.log('✅ Welcome email sent successfully to:', newUser.email))
-      .catch((err) => console.error('❌ Welcome email failed for', newUser.email, ':', err.message))
-
+    console.log('📤 Sending registration response')
     res.status(201).json({
       id: newUser.id,
       name: newUser.name,
@@ -102,7 +100,12 @@ const forgotPassword = async (req, res, next) => {
     tokens.push({ email, token: resetToken, expiresAt: Date.now() + 3600000 }) // 1 hour
     await saveArrayToRedis(REDIS_KEYS.RESET_TOKENS, tokens)
 
-    await sendPasswordResetEmail(user.email, resetToken)
+    // Send password reset email in background (truly non-blocking)
+    setImmediate(() => {
+      sendPasswordResetEmail(user.email, resetToken)
+        .then(() => console.log('✅ Password reset email sent successfully to:', user.email))
+        .catch((err) => console.error('❌ Password reset email failed for', user.email, ':', err.message))
+    })
 
     res.status(200).json({ message: 'If an account exists, a reset link was sent.' })
   } catch (error) {

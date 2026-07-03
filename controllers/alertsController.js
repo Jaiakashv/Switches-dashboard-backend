@@ -33,15 +33,17 @@ const generateMockAlert = async (req, res, next) => {
     alerts.push(newAlert)
     await saveArrayToRedis(REDIS_KEYS.ALERTS, alerts)
 
-    // Trigger email if Critical or High
+    // Trigger email if Critical or High (truly non-blocking)
     if (newAlert.severity === 'Critical' || newAlert.severity === 'High') {
-      const users = await getArrayFromRedis(REDIS_KEYS.USERS)
-      const admins = users.filter((u) => u.role === 'Admin')
-      for (const admin of admins) {
-        await sendClusterAlertEmail(admin.email, newAlert)
-          .then(() => console.log('✅ Alert email sent successfully to:', admin.email))
-          .catch((err) => console.error('❌ Alert email failed for', admin.email, ':', err.message))
-      }
+      setImmediate(async () => {
+        const users = await getArrayFromRedis(REDIS_KEYS.USERS)
+        const admins = users.filter((u) => u.role === 'Admin')
+        for (const admin of admins) {
+          await sendClusterAlertEmail(admin.email, newAlert)
+            .then(() => console.log('✅ Alert email sent successfully to:', admin.email))
+            .catch((err) => console.error('❌ Alert email failed for', admin.email, ':', err.message))
+        }
+      })
     }
 
     res.status(201).json(newAlert)

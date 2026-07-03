@@ -1,15 +1,17 @@
 const nodemailer = require('nodemailer')
 
-// Standard SMTP configuration
+// Standard SMTP configuration - optimized for cloud platforms
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: process.env.EMAIL_PORT || 587,
-  secure: process.env.EMAIL_SECURE === 'true',
+  port: process.env.EMAIL_PORT || 465, // Use 465 (SSL) instead of 587 (TLS) for better cloud compatibility
+  secure: true, // true for 465, false for 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  connectionTimeout: 10000,
+  connectionTimeout: 30000, // Increased from 10s to 30s for cloud environments
+  greetingTimeout: 15000,
+  socketTimeout: 15000,
   tls: {
     rejectUnauthorized: false,
   },
@@ -50,6 +52,7 @@ const sendEmail = async ({ to, subject, html }) => {
 }
 
 const sendWelcomeEmail = async (email, name) => {
+  console.log('📧 sendWelcomeEmail called for:', email, name)
   const subject = 'Welcome to Network Management System'
   const html = `
     <h1>Welcome, ${name}!</h1>
