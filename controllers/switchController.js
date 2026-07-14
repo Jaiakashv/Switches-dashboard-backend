@@ -43,7 +43,7 @@ const createSwitch = async (req, res, next) => {
 
     const switches = await getArrayFromRedis(REDIS_KEYS.SWITCHES)
 
-    if (switches.some((device) => device.id === payload.id)) {
+    if (switches.some((device) => device.id.trim().toLowerCase() === payload.id.trim().toLowerCase())) {
       res.status(409)
       throw new Error('A switch with this ID already exists.')
     }
