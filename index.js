@@ -6,6 +6,7 @@ const { connectRedis, disconnectRedis, redisClient } = require('./config/redis')
 const { errorHandler } = require('./middleware/error')
 const seedSwitches = require('./data/switches')
 const { REDIS_KEYS } = require('./utils/constants')
+const { startCpuDataCollection } = require('./services/cpuDataService')
 
 // Route Imports
 const authRoutes = require('./routes/authRoutes')
@@ -42,6 +43,9 @@ async function startServer() {
     }]
     await redisClient.set(REDIS_KEYS.USERS, JSON.stringify(defaultAdmin))
   }
+
+  // Start CPU data collection
+  startCpuDataCollection()
 
   // Middleware
   app.use(cors())
