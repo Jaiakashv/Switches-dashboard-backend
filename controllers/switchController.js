@@ -103,8 +103,77 @@ const updateSwitchStatus = async (req, res, next) => {
   }
 }
 
+const updateSwitch = async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const payload = req.body
+
+    if (!STATUS_OPTIONS.includes(payload.status)) {
+      res.status(400)
+      throw new Error('Invalid status value.')
+    }
+
+    const switches = await getArrayFromRedis(REDIS_KEYS.SWITCHES)
+    const index = switches.findIndex((device) => device.id === id)
+
+    if (index === -1) {
+      res.status(404)
+      throw new Error('Switch not found.')
+    }
+
+    // Check if new ID conflicts with existing switch (if ID is being changed)
+    if (payload.id && payload.id !== id) {
+      const idExists = switches.some((device) => 
+        device.id.trim().toLowerCase() === payload.id.trim().toLowerCase() && device.id !== id
+      )
+      if (idExists) {
+        res.status(409)
+        throw new Error('A switch with this ID already exists.')
+      }
+    }
+
+    const updatedSwitch = {
+      model: payload.model?.trim() || switches[index].model,
+      physicalDevice: payload.physicalDevice?.trim() || switches[index].physicalDevice,
+      id: payload.id?.trim() || switches[index].id,
+      config: payload.config?.trim() || switches[index].config,
+      status: payload.status || switches[index].status,
+    }
+
+    switches[index] = updatedSwitch
+    await saveArrayToRedis(REDIS_KEYS.SWITCHES, switches)
+
+    res.json(updatedSwitch)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const deleteSwitch = async (req, res, next) => {
+  try {
+    const { id } = req.params
+
+    const switches = await getArrayFromRedis(REDIS_KEYS.SWITCHES)
+    const index = switches.findIndex((device) => device.id === id)
+
+    if (index === -1) {
+      res.status(404)
+      throw new Error('Switch not found.')
+    }
+
+    switches.splice(index, 1)
+    await saveArrayToRedis(REDIS_KEYS.SWITCHES, switches)
+
+    res.json({ message: 'Switch deleted successfully' })
+  } catch (error) {
+    next(error)
+  }
+}
+
 module.exports = {
   getSwitches,
   createSwitch,
   updateSwitchStatus,
+  updateSwitch,
+  deleteSwitch,
 }

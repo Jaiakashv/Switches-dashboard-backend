@@ -1,6 +1,6 @@
 const express = require('express')
 const router = express.Router()
-const { getSwitches, createSwitch, updateSwitchStatus } = require('../controllers/switchController')
+const { getSwitches, createSwitch, updateSwitchStatus, updateSwitch, deleteSwitch } = require('../controllers/switchController')
 const { protect } = require('../middleware/auth')
 const { body } = require('express-validator')
 const { validationResult } = require('express-validator')
@@ -38,5 +38,20 @@ router.route('/:id/status')
     validatePayload,
     updateSwitchStatus
   )
+
+router.route('/:id')
+  .patch(
+    protect,
+    [
+      body('model').optional().notEmpty().withMessage('Model is required'),
+      body('physicalDevice').optional().notEmpty().withMessage('Physical Device is required'),
+      body('id').optional().notEmpty().withMessage('ID is required'),
+      body('config').optional().notEmpty().withMessage('Config is required'),
+      body('status').optional().notEmpty().withMessage('Status is required'),
+    ],
+    validatePayload,
+    updateSwitch
+  )
+  .delete(protect, deleteSwitch)
 
 module.exports = router
