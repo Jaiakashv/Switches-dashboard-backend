@@ -37,6 +37,50 @@ const getAnalytics = async (req, res, next) => {
   }
 }
 
+// CPU usage endpoint with time range support
+const getCpuUsage = async (req, res, next) => {
+  try {
+    const { range = '24h' } = req.query
+
+    // Determine data points and interval based on range
+    const rangeConfig = {
+      '1h': { dataPoints: 60, intervalMinutes: 1 }, // 1 minute intervals for 1 hour
+      '6h': { dataPoints: 72, intervalMinutes: 5 }, // 5 minute intervals for 6 hours
+      '12h': { dataPoints: 72, intervalMinutes: 10 }, // 10 minute intervals for 12 hours
+      '24h': { dataPoints: 24, intervalMinutes: 60 } // 1 hour intervals for 24 hours
+    }
+
+    const config = rangeConfig[range] || rangeConfig['24h']
+    const { dataPoints, intervalMinutes } = config
+
+    const cpuData = []
+    const now = new Date()
+
+    for (let i = dataPoints - 1; i >= 0; i--) {
+      const timestamp = new Date(now.getTime() - i * intervalMinutes * 60 * 1000).toISOString()
+      
+      // Generate realistic CPU usage with min, median, max
+      const baseUsage = Math.floor(Math.random() * 40) + 20
+      const min = Math.max(0, baseUsage - Math.floor(Math.random() * 15))
+      const median = baseUsage
+      const max = Math.min(100, baseUsage + Math.floor(Math.random() * 20))
+
+      cpuData.push({
+        timestamp,
+        min,
+        median,
+        max
+      })
+    }
+
+    res.json(cpuData)
+
+  } catch (error) {
+    next(error)
+  }
+}
+
 module.exports = {
-  getAnalytics
+  getAnalytics,
+  getCpuUsage
 }
