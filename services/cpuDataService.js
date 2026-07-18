@@ -1,5 +1,5 @@
 const si = require('systeminformation');
-const redis = require('../config/redis');
+const { redisClient } = require('../config/redis');
 
 const CPU_DATA_KEY = 'cpu:usage:data';
 const CPU_COLLECTION_INTERVAL = 60000; // Collect data every 1 minute
@@ -22,11 +22,11 @@ const collectCpuData = async () => {
 
     // Store in Redis as a sorted set with timestamp as score
     const score = Date.now();
-    await redis.zadd(CPU_DATA_KEY, score, JSON.stringify(cpuData));
+    await redisClient.zAdd(CPU_DATA_KEY, { score, value: JSON.stringify(cpuData) });
 
     // Keep only last 7 days of data to prevent memory issues
     const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    await redis.zremrangebyscore(CPU_DATA_KEY, '-inf', sevenDaysAgo);
+    await redisClient.zRemRangeByScore(CPU_DATA_KEY, '-inf', sevenDaysAgo);
 
     console.log('CPU data collected and stored:', cpuData.usage.toFixed(2) + '%');
     return cpuData;
@@ -56,7 +56,7 @@ const getCpuUsageByRange = async (range) => {
     const startTime = now - (dataPoints * intervalMinutes * 60 * 1000);
 
     // Get data from Redis for the time range
-    const rawData = await redis.zrangebyscore(CPU_DATA_KEY, startTime, now);
+    const rawData = await redisClient.zRangeByScore(CPU_DATA_KEY, startTime, now);
 
     if (!rawData || rawData.length === 0) {
       console.log('No CPU data found in Redis, using mock data');

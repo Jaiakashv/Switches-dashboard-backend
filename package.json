@@ -19,6 +19,7 @@
     "express-validator": "^7.3.2",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^9.0.3",
-    "redis": "^5.10.0"
+    "redis": "^5.10.0",
+    "systeminformation": "^5.31.17"
   }
 }
