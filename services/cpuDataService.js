@@ -1,4 +1,4 @@
-const si = require('systeminformation');
+const systemStats = require('node-system-stats');
 const { redisClient } = require('../config/redis');
 
 const CPU_DATA_KEY = 'cpu:usage:data';
@@ -9,15 +9,31 @@ const CPU_COLLECTION_INTERVAL = 60000; // Collect data every 1 minute
  */
 const collectCpuData = async () => {
   try {
-    const cpuLoad = await si.currentLoad();
+    // Try different API patterns for node-system-stats
+    let cpuStats;
+    try {
+      cpuStats = systemStats.cpu();
+    } catch (e) {
+      try {
+        cpuStats = systemStats.get('cpu');
+      } catch (e2) {
+        cpuStats = systemStats;
+      }
+    }
+    
+    // Try different property names
+    const usage = cpuStats.usage || cpuStats.cpuUsage || cpuStats.load || 0;
+    const user = cpuStats.user || cpuStats.cpuUser || 0;
+    const system = cpuStats.system || cpuStats.cpuSystem || 0;
+    const idle = cpuStats.idle || cpuStats.cpuIdle || 0;
     
     const cpuData = {
       timestamp: new Date().toISOString(),
-      usage: cpuLoad.currentload, // Overall CPU load percentage
-      user: cpuLoad.currentload_user,
-      system: cpuLoad.currentload_system,
-      idle: cpuLoad.currentload_idle,
-      cpus: cpuLoad.cpus // Per CPU core data
+      usage: usage, // Overall CPU load percentage
+      user: user,
+      system: system,
+      idle: idle,
+      cpus: cpuStats.cpus || [] // Per CPU core data
     };
 
     // Store in Redis as a sorted set with timestamp as score
@@ -28,7 +44,7 @@ const collectCpuData = async () => {
     const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     await redisClient.zRemRangeByScore(CPU_DATA_KEY, '-inf', sevenDaysAgo);
 
-    console.log('CPU data collected and stored:', cpuData.usage.toFixed(2) + '%');
+    console.log('CPU data collected and stored:', (cpuData.usage || 0).toFixed(2) + '%');
     return cpuData;
   } catch (error) {
     console.error('Error collecting CPU data:', error);
