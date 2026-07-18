@@ -3,10 +3,62 @@ const { REDIS_KEYS } = require('../utils/constants')
 const crypto = require('crypto')
 const { sendClusterAlertEmail } = require('../services/emailService')
 
+// Helper function to generate message based on severity
+const generateMessageForSeverity = (severity) => {
+  const failureMessages = {
+    'Critical': [
+      'Cluster node failure detected - immediate intervention required',
+      'Critical service outage - all systems down',
+      'Network partition detected - cluster unavailable',
+      'Database connection lost - critical data at risk'
+    ],
+    'High': [
+      'Service degradation detected - performance severely impacted',
+      'High memory usage warning - potential memory leak',
+      'CPU utilization exceeded 90% - system overload',
+      'Disk space critically low - immediate cleanup required'
+    ],
+    'Medium': [
+      'Performance degradation detected - response times increased',
+      'Memory usage above threshold - monitor closely',
+      'Connection pool exhaustion detected',
+      'API rate limiting active - traffic spike detected'
+    ],
+    'Low': [
+      'Minor performance fluctuation detected',
+      'Scheduled maintenance window approaching',
+      'Configuration drift detected - review recommended',
+      'Resource utilization slightly elevated'
+    ]
+  }
+  
+  const messages = failureMessages[severity] || failureMessages['Low']
+  return messages[Math.floor(Math.random() * messages.length)]
+}
+
 // Fetch all alerts
 const getAlerts = async (req, res, next) => {
   try {
-    const alerts = await getArrayFromRedis(REDIS_KEYS.ALERTS)
+    let alerts = await getArrayFromRedis(REDIS_KEYS.ALERTS)
+    
+    // Migrate existing alerts to have messages
+    let needsUpdate = false
+    alerts = alerts.map(alert => {
+      if (!alert.message) {
+        needsUpdate = true
+        return {
+          ...alert,
+          message: generateMessageForSeverity(alert.severity)
+        }
+      }
+      return alert
+    })
+    
+    // Save if any alerts were updated
+    if (needsUpdate) {
+      await saveArrayToRedis(REDIS_KEYS.ALERTS, alerts)
+    }
+    
     res.json(alerts)
   } catch (error) {
     next(error)
@@ -19,15 +71,49 @@ const generateMockAlert = async (req, res, next) => {
     const alerts = await getArrayFromRedis(REDIS_KEYS.ALERTS)
     
     const severities = ['Low', 'Medium', 'High', 'Critical']
+    const clusterNum = Math.floor(Math.random() * 10) + 1
+    const severity = severities[Math.floor(Math.random() * severities.length)]
+    
+    // Generate appropriate failure message based on severity
+    const failureMessages = {
+      'Critical': [
+        'Cluster node failure detected - immediate intervention required',
+        'Critical service outage - all systems down',
+        'Network partition detected - cluster unavailable',
+        'Database connection lost - critical data at risk'
+      ],
+      'High': [
+        'Service degradation detected - performance severely impacted',
+        'High memory usage warning - potential memory leak',
+        'CPU utilization exceeded 90% - system overload',
+        'Disk space critically low - immediate cleanup required'
+      ],
+      'Medium': [
+        'Performance degradation detected - response times increased',
+        'Memory usage above threshold - monitor closely',
+        'Connection pool exhaustion detected',
+        'API rate limiting active - traffic spike detected'
+      ],
+      'Low': [
+        'Minor performance fluctuation detected',
+        'Scheduled maintenance window approaching',
+        'Configuration drift detected - review recommended',
+        'Resource utilization slightly elevated'
+      ]
+    }
+    
+    const messages = failureMessages[severity]
+    const message = messages[Math.floor(Math.random() * messages.length)]
     
     const newAlert = {
       id: crypto.randomUUID(),
-      clusterName: `Cluster-${Math.floor(Math.random() * 10) + 1}`,
+      clusterName: `Cluster-${clusterNum}`,
       switchId: `SW-${Math.floor(Math.random() * 100) + 1}`,
-      severity: severities[Math.floor(Math.random() * severities.length)],
+      severity: severity,
       status: 'Open',
       timestamp: new Date().toISOString(),
       acknowledgedState: false,
+      message: message
     }
 
     alerts.push(newAlert)
