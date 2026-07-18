@@ -1,139 +1,138 @@
-const systemStats = require('node-system-stats');
-const { redisClient } = require('../config/redis');
+const os = require("os");
+const { redisClient } = require("../config/redis");
 
-const CPU_DATA_KEY = 'cpu:usage:data';
-const CPU_COLLECTION_INTERVAL = 60000; // Collect data every 1 minute
+const CPU_DATA_KEY = "cpu:usage:data";
+const CPU_COLLECTION_INTERVAL = 60000; // 1 minute
 
 /**
- * Collect current CPU usage and store in Redis
+ * Get average CPU times
+ */
+function cpuAverage() {
+  const cpus = os.cpus();
+
+  let idle = 0;
+  let total = 0;
+
+  cpus.forEach(cpu => {
+    idle += cpu.times.idle;
+
+    Object.values(cpu.times).forEach(time => {
+      total += time;
+    });
+  });
+
+  return {
+    idle: idle / cpus.length,
+    total: total / cpus.length
+  };
+}
+
+/**
+ * Calculate CPU usage over 500ms
+ */
+async function getCpuUsage() {
+  const start = cpuAverage();
+
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  const end = cpuAverage();
+
+  const idle = end.idle - start.idle;
+  const total = end.total - start.total;
+
+  if (total <= 0) return 0;
+
+  return Number((100 - (idle / total) * 100).toFixed(2));
+}
+
+/**
+ * Collect CPU usage and store in Redis
  */
 const collectCpuData = async () => {
   try {
-    // Try different API patterns for node-system-stats
-    let cpuStats;
-    try {
-      cpuStats = systemStats.cpu();
-    } catch (e) {
-      try {
-        cpuStats = systemStats.get('cpu');
-      } catch (e2) {
-        cpuStats = systemStats;
-      }
-    }
-    
-    // Try different property names
-    const usage = cpuStats.usage || cpuStats.cpuUsage || cpuStats.load || 0;
-    const user = cpuStats.user || cpuStats.cpuUser || 0;
-    const system = cpuStats.system || cpuStats.cpuSystem || 0;
-    const idle = cpuStats.idle || cpuStats.cpuIdle || 0;
-    
+    const usage = await getCpuUsage();
+
     const cpuData = {
       timestamp: new Date().toISOString(),
-      usage: usage, // Overall CPU load percentage
-      user: user,
-      system: system,
-      idle: idle,
-      cpus: cpuStats.cpus || [] // Per CPU core data
+      usage,
+      user: 0,
+      system: 0,
+      idle: Number((100 - usage).toFixed(2)),
+      cpus: []
     };
 
-    // Store in Redis as a sorted set with timestamp as score
-    const score = Date.now();
-    await redisClient.zAdd(CPU_DATA_KEY, { score, value: JSON.stringify(cpuData) });
+    await redisClient.zAdd(CPU_DATA_KEY, {
+      score: Date.now(),
+      value: JSON.stringify(cpuData)
+    });
 
-    // Keep only last 7 days of data to prevent memory issues
-    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    await redisClient.zRemRangeByScore(CPU_DATA_KEY, '-inf', sevenDaysAgo);
+    // Keep only last 7 days
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
-    console.log('CPU data collected and stored:', (cpuData.usage || 0).toFixed(2) + '%');
+    await redisClient.zRemRangeByScore(
+      CPU_DATA_KEY,
+      "-inf",
+      sevenDaysAgo
+    );
+
+    console.log(`CPU Usage: ${usage}%`);
+
     return cpuData;
-  } catch (error) {
-    console.error('Error collecting CPU data:', error);
+  } catch (err) {
+    console.error("CPU collection error:", err);
   }
 };
 
 /**
- * Get CPU usage data for a specific time range
- * @param {string} range - Time range (1h, 6h, 12h, 24h)
- * @returns {Array} Array of CPU data with min, median, max
+ * Calculate median
  */
-const getCpuUsageByRange = async (range) => {
-  try {
-    const rangeConfig = {
-      '1h': { dataPoints: 60, intervalMinutes: 1 },
-      '6h': { dataPoints: 72, intervalMinutes: 5 },
-      '12h': { dataPoints: 72, intervalMinutes: 10 },
-      '24h': { dataPoints: 24, intervalMinutes: 60 }
-    };
+const calculateMedian = numbers => {
+  if (!numbers.length) return 0;
 
-    const config = rangeConfig[range] || rangeConfig['24h'];
-    const { dataPoints, intervalMinutes } = config;
+  const sorted = [...numbers].sort((a, b) => a - b);
 
-    const now = Date.now();
-    const startTime = now - (dataPoints * intervalMinutes * 60 * 1000);
+  const middle = Math.floor(sorted.length / 2);
 
-    // Get data from Redis for the time range
-    const rawData = await redisClient.zRangeByScore(CPU_DATA_KEY, startTime, now);
-
-    if (!rawData || rawData.length === 0) {
-      console.log('No CPU data found in Redis, using mock data');
-      return generateMockCpuData(range);
-    }
-
-    // Parse JSON data
-    const parsedData = rawData.map(item => JSON.parse(item));
-
-    // Group data into intervals and calculate min, median, max
-    const intervalData = groupDataByInterval(parsedData, intervalMinutes, dataPoints);
-
-    return intervalData;
-  } catch (error) {
-    console.error('Error getting CPU usage from Redis:', error);
-    return generateMockCpuData(range);
-  }
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 
 /**
- * Group CPU data by time intervals and calculate min, median, max
- * @param {Array} data - Raw CPU data
- * @param {number} intervalMinutes - Interval in minutes
- * @param {number} dataPoints - Number of data points to return
- * @returns {Array} Array of interval data with min, median, max
+ * Group into intervals
  */
 const groupDataByInterval = (data, intervalMinutes, dataPoints) => {
   const intervalMs = intervalMinutes * 60 * 1000;
   const now = Date.now();
+
   const result = [];
 
   for (let i = dataPoints - 1; i >= 0; i--) {
-    const intervalStart = now - (i * intervalMs);
-    const intervalEnd = intervalStart + intervalMs;
+    const start = now - i * intervalMs;
+    const end = start + intervalMs;
 
-    // Find data points within this interval
-    const intervalPoints = data.filter(point => {
-      const pointTime = new Date(point.timestamp).getTime();
-      return pointTime >= intervalStart && pointTime < intervalEnd;
+    const values = data.filter(item => {
+      const t = new Date(item.timestamp).getTime();
+      return t >= start && t < end;
     });
 
-    if (intervalPoints.length > 0) {
-      const usages = intervalPoints.map(p => p.usage);
-      const min = Math.min(...usages);
-      const max = Math.max(...usages);
-      const median = calculateMedian(usages);
+    if (values.length) {
+      const usages = values.map(v => v.usage);
 
       result.push({
-        timestamp: new Date(intervalStart).toISOString(),
-        min: min,
-        median: median,
-        max: max
+        timestamp: new Date(start).toISOString(),
+        min: Math.min(...usages),
+        median: calculateMedian(usages),
+        max: Math.max(...usages)
       });
     } else {
-      // If no data for this interval, use the last known value or interpolate
-      const lastKnown = result.length > 0 ? result[result.length - 1].median : 20;
+      const last = result.length ? result[result.length - 1].median : 0;
+
       result.push({
-        timestamp: new Date(intervalStart).toISOString(),
-        min: lastKnown,
-        median: lastKnown,
-        max: lastKnown
+        timestamp: new Date(start).toISOString(),
+        min: last,
+        median: last,
+        max: last
       });
     }
   }
@@ -142,58 +141,90 @@ const groupDataByInterval = (data, intervalMinutes, dataPoints) => {
 };
 
 /**
- * Calculate median of an array of numbers
- * @param {Array} numbers - Array of numbers
- * @returns {number} Median value
+ * Mock data if Redis empty
  */
-const calculateMedian = (numbers) => {
-  const sorted = [...numbers].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-};
-
-/**
- * Generate mock CPU data (fallback when Redis has no data)
- * @param {string} range - Time range
- * @returns {Array} Mock CPU data
- */
-const generateMockCpuData = (range) => {
-  const rangeConfig = {
-    '1h': { dataPoints: 60, intervalMinutes: 1 },
-    '6h': { dataPoints: 72, intervalMinutes: 5 },
-    '12h': { dataPoints: 72, intervalMinutes: 10 },
-    '24h': { dataPoints: 24, intervalMinutes: 60 }
+const generateMockCpuData = range => {
+  const config = {
+    "1h": { dataPoints: 60, intervalMinutes: 1 },
+    "6h": { dataPoints: 72, intervalMinutes: 5 },
+    "12h": { dataPoints: 72, intervalMinutes: 10 },
+    "24h": { dataPoints: 24, intervalMinutes: 60 }
   };
 
-  const config = rangeConfig[range] || rangeConfig['24h'];
-  const { dataPoints, intervalMinutes } = config;
+  const { dataPoints, intervalMinutes } =
+    config[range] || config["24h"];
 
-  const cpuData = [];
-  const now = new Date();
+  const result = [];
 
   for (let i = dataPoints - 1; i >= 0; i--) {
-    const timestamp = new Date(now.getTime() - i * intervalMinutes * 60 * 1000).toISOString();
-    const baseUsage = Math.floor(Math.random() * 40) + 20;
-    const min = Math.max(0, baseUsage - Math.floor(Math.random() * 15));
-    const median = baseUsage;
-    const max = Math.min(100, baseUsage + Math.floor(Math.random() * 20));
+    const base = Math.random() * 40 + 20;
 
-    cpuData.push({ timestamp, min, median, max });
+    result.push({
+      timestamp: new Date(
+        Date.now() - i * intervalMinutes * 60000
+      ).toISOString(),
+      min: Math.max(base - 10, 0),
+      median: Number(base.toFixed(2)),
+      max: Math.min(base + 10, 100)
+    });
   }
 
-  return cpuData;
+  return result;
 };
 
 /**
- * Start continuous CPU data collection
+ * Read CPU history
+ */
+const getCpuUsageByRange = async range => {
+  try {
+    const config = {
+      "1h": { dataPoints: 60, intervalMinutes: 1 },
+      "6h": { dataPoints: 72, intervalMinutes: 5 },
+      "12h": { dataPoints: 72, intervalMinutes: 10 },
+      "24h": { dataPoints: 24, intervalMinutes: 60 }
+    };
+
+    const { dataPoints, intervalMinutes } =
+      config[range] || config["24h"];
+
+    const start =
+      Date.now() -
+      dataPoints * intervalMinutes * 60000;
+
+    const raw = await redisClient.zRangeByScore(
+      CPU_DATA_KEY,
+      start,
+      Date.now()
+    );
+
+    if (!raw.length) {
+      return generateMockCpuData(range);
+    }
+
+    const parsed = raw.map(JSON.parse);
+
+    return groupDataByInterval(
+      parsed,
+      intervalMinutes,
+      dataPoints
+    );
+  } catch (err) {
+    console.error(err);
+    return generateMockCpuData(range);
+  }
+};
+
+/**
+ * Start collector
  */
 const startCpuDataCollection = () => {
-  // Collect initial data
   collectCpuData();
 
-  // Set up interval for continuous collection
   setInterval(collectCpuData, CPU_COLLECTION_INTERVAL);
-  console.log(`CPU data collection started (interval: ${CPU_COLLECTION_INTERVAL}ms)`);
+
+  console.log(
+    `CPU collector started (${CPU_COLLECTION_INTERVAL} ms)`
+  );
 };
 
 module.exports = {
